@@ -1,4 +1,5 @@
 # catastrophes~ — René Thom catastrophe models as Max/MSP audio externals (v1.0.0)
+**DOI (Zenodo, v1.0):** https://doi.org/10.5281/zenodo.18166590
 
 `catastrophes~` is a small library of Max/MSP audio externals implementing René Thom’s elementary catastrophes as **audio‑rate equilibrium operators**. Each object computes real equilibria of a Thom potential’s gradient in real time, exposing (i) the full set of real roots and (ii) a **single selected state** `x_out` determined by local stability and continuity (hysteresis).
 
