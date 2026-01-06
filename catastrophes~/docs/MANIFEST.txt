@@ -1,0 +1,57 @@
+catastrophes~ v1.0.0 — Manifest
+
+Top-level files
+  README.md
+  LICENSE
+  CITATION.cff
+  package-info.json
+
+externals/
+  fold~.mxo
+  cusp~.mxo
+  swallowtail~.mxo
+  butterfly~.mxo
+
+help/
+  fold~.maxhelp
+  cusp~.maxhelp
+  swallowtail~.maxhelp
+  butterfly~.maxhelp
+
+patchers/
+  A2_fold_bifurcation.maxpat
+  A3_cusp_hysteresis.maxpat
+  A4_swallowtail_multistability.maxpat
+  A5_butterfly_multistability.maxpat
+  README_patchers.md
+
+figs/
+  A2_fold_bifurcation_fig.maxpat
+  A3_cusp_hysteresis_fig.maxpat
+  A4_swallowtail_multistability_fig.maxpat
+  A5_butterfly_multistability_fig.maxpat
+  A2_fold_bifurcation_fig.tif
+  A3_cusp_hysteresis_fig.tif
+  A4_swallowtail_multistability_fig.tif
+  A5_butterfly_multistability_fig.tif
+
+audio/
+  A2_fold_bifurcation_10s.aiff
+  A3_cusp_hysteresis_10s.aiff
+  A4_swallowtail_multistability_10s.aiff
+  A5_butterfly_multistability_10s.aiff
+
+docs/
+  REPRODUCIBILITY.md
+  IMPLEMENTATION_CONTRACT.md
+  CHANGELOG.md
+  MANIFEST.txt
+
+scripts/
+  build_and_install.sh
+
+src/
+  fold~/fold~.c + Makefile
+  cusp~/cusp~.c + Makefile
+  swallowtail~/swallowtail~.c + Makefile
+  butterfly~/butterfly~.c + Makefile

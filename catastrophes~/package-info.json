@@ -1,0 +1,15 @@
+{
+  "name": "catastrophes~",
+  "version": "1.0.0",
+  "author": "Leon Steidle",
+  "description": "Audio-rate externals implementing Thom's catastrophe models (cusp, fold, swallowtail, butterfly) for Max/MSP.",
+  "homepage": "",
+  "tags": [
+    "audio",
+    "synthesis",
+    "nonlinear",
+    "catastrophe theory"
+  ],
+  "max_version_min": "8.0.0",
+  "type": "package"
+}
