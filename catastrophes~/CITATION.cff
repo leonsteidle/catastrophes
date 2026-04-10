@@ -3,10 +3,8 @@ message: "If you use this software, please cite it as below."
 title: "catastrophes~"
 version: 1.0.0
 authors:
-  - family-names: Steidle
-    given-names: Leon
+  - name: "Anonymous"
 license: MIT
-date-released: "2026-01-04"
 keywords:
   - Max/MSP
   - catastrophe theory
