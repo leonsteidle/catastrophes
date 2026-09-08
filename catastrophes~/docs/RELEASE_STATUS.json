@@ -1,0 +1,57 @@
+{
+  "version": "2.0.0",
+  "status": "local_release_confirmed_unpublished",
+  "published": false,
+  "source_sha256": "40ee773e93b365fc5ce3c24ae96a7a9ac4f38d0279bf3a2059edb65a0760145c",
+  "executable_sha256": "b3bcd303692927ec1b5a9da30ba4c500a69b497bb3dfe064f4e7e5e41ae54af2",
+  "solver_header_sha256": "3ab8e60fbdb58738de9306402cb2b40c37d8195a4adaf7c011d454ad3eb6d052",
+  "mach_o_uuids": [
+    {
+      "uuid": "EC260A01-A402-3A35-AB22-17FE9E3E545C",
+      "architecture": "x86_64"
+    },
+    {
+      "uuid": "6958247A-45C5-3BD1-84DA-B3C7A23BDCE9",
+      "architecture": "arm64"
+    }
+  ],
+  "deployment_target": "15.0",
+  "architectures": [
+    "arm64",
+    "x86_64"
+  ],
+  "algorithm_unchanged_from_rc": true,
+  "source_diff_scope": [
+    "release comment",
+    "BF_RELEASE_VERSION string"
+  ],
+  "historical_rc_source_sha256": "dc82dae66871986a564683b75e9726cf3c767d3509079308791f568e7d568036",
+  "historical_rc_executable_sha256": "36017dc5390df8d76654abe5da296be2307d5e973aeffba8e9079ae73a2ded72",
+  "final_runtime_confirmed": true,
+  "prior_cadence_evidence_version": "2.0.0-rc.1",
+  "final_confirmation": {
+    "captured_at_utc": "2026-09-08T02:49:34.097Z",
+    "scope": "final_binary_functional64_only",
+    "runtime": {
+      "dsp_on": 1,
+      "sample_rate": 48000,
+      "signal_vector_size": 64,
+      "io_vector_size": 512
+    },
+    "executed_architecture": "x86_64",
+    "case_count": 23,
+    "sample_count_per_field": 512,
+    "scalar_values_json_csv": 220160,
+    "capture_files_sha256": {
+      "functional_sigvs_64.csv": "fbe804d3708a241d70376d4ec165ecc0ffe927cbe5ae3fc8cd78600c8d193f90",
+      "functional_sigvs_64.json": "af0beda591adacfbd92dbf153e540d18143fe229c3d7f8edc95593c6509ea70c"
+    },
+    "test_definition_sha256": "6100fc893392a148964b85a25f52a47bb69866ad9d1cd4affd6254c765dab7b5",
+    "verifier_sha256": "3c6cf26f301324b8f169dd5cb111abd28d59cc4103759eec0cd5bad19319af33",
+    "cadence_repeated": false,
+    "arm64_runtime_tested": false,
+    "cpu_xrun_claim": false,
+    "status": "PASS",
+    "loaded_a5_uuid": "ec260a01a4023a35ab2217fe9e3e545c"
+  }
+}

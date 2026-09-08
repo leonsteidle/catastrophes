@@ -5,6 +5,10 @@
   Stability:
     V''(x) = 5x^4 + 3a x^2 + 2b x + c    (stable if > 0)
 
+  Canonical release 2.0.0:
+   - Distinct real roots are isolated using the frozen numerical header.
+   - See docs/MIGRATION.md for eps semantics and numerical limits.
+
   Conventions (catastrophes~):
    - Signal inlets, but if an inlet is unconnected we use stored parameter.
    - Sample-and-hold per vector: compute once using first sample of each inlet.
@@ -12,7 +16,7 @@
    - Output selection x_out: prefer stable real root closest to x_prev; else closest root.
    - If no real roots found: mode = hold|zero|nan.
 
-  Inlets (signal/float messages):
+  Signal inlets (named messages set stored parameters):
     0 a, 1 b, 2 c, 3 d, 4 width
 
   Outlets (signal):
@@ -22,7 +26,8 @@
     7    x_out
 
   Messages:
-    a/b/c/d/width <f>, eps <f>, width_eps <f>, mode <sym>, reset, info
+    a/b/c/d/width <f>, stability_eps <f>, eps <f> (legacy alias),
+    width_eps <f>, mode <sym>, reset, info
     float (no selector) sets a
 */
 
@@ -32,11 +37,19 @@
 
 #include <math.h>
 #include <float.h>
-#include <complex.h>
 #include <string.h>
+
+#include "butterfly_real_solver.h"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
+#endif
+
+#define BF_RELEASE_VERSION "2.0.0"
+#define BF_SOLVER_SHA256 "3ab8e60fbdb58738de9306402cb2b40c37d8195a4adaf7c011d454ad3eb6d052"
+
+#ifndef BF_MAX_CLASS_NAME
+#define BF_MAX_CLASS_NAME "butterfly~"
 #endif
 
 typedef enum {
@@ -52,7 +65,7 @@ typedef struct _butterfly {
     double a, b, c, d, width;
 
     // numerics
-    double eps;       // root / residual tolerance
+    double eps;       // stability-classification epsilon (V'' > eps)
     double width_eps; // clamp for |width|
 
     // selection memory
@@ -74,58 +87,6 @@ static int bf_isfinite(double x)
     return (x == x) && (x <= DBL_MAX) && (x >= -DBL_MAX);
 }
 
-static double bf_clamp(double v, double lo, double hi)
-{
-    if (v < lo) return lo;
-    if (v > hi) return hi;
-    return v;
-}
-
-static void sort_doubles(double *arr, int n)
-{
-    for (int i = 0; i < n - 1; ++i)
-        for (int j = i + 1; j < n; ++j)
-            if (arr[j] < arr[i]) { double t = arr[i]; arr[i] = arr[j]; arr[j] = t; }
-}
-
-static int uniq_merge(double *arr, int n, double tol)
-{
-    if (n <= 1) return n;
-    int w = 1;
-    double prev = arr[0];
-    for (int i = 1; i < n; ++i) {
-        if (fabs(arr[i] - prev) > tol) {
-            arr[w++] = arr[i];
-            prev = arr[i];
-        }
-    }
-    return w;
-}
-
-/* monic quintic: p(x)=x^5 + c4 x^4 + c3 x^3 + c2 x^2 + c1 x + c0 */
-static inline double poly5_real(double x, double c4, double c3, double c2, double c1, double c0)
-{
-    return (((((x + c4) * x + c3) * x + c2) * x + c1) * x + c0);
-}
-
-static inline double poly5_real_deriv(double x, double c4, double c3, double c2, double c1)
-{
-    double x2 = x * x;
-    double x3 = x2 * x;
-    double x4 = x2 * x2;
-    return 5.0 * x4 + 4.0 * c4 * x3 + 3.0 * c3 * x2 + 2.0 * c2 * x + c1;
-}
-
-static inline double complex poly5_c_monic(double complex z,
-                                           double c4, double c3, double c2, double c1, double c0)
-{
-    double complex p = z + c4;
-    p = p * z + c3;
-    p = p * z + c2;
-    p = p * z + c1;
-    p = p * z + c0;
-    return p;
-}
 
 /* V''(x) = 5x^4 + 3a x^2 + 2b x + c  (here b,c are effective) */
 static inline double vpp(double x, double a, double b_eff, double c_eff)
@@ -135,173 +96,6 @@ static inline double vpp(double x, double a, double b_eff, double c_eff)
     return 5.0 * x4 + 3.0 * a * x2 + 2.0 * b_eff * x + c_eff;
 }
 
-/* Newton polish on real line */
-static double newton_refine(double x, double c4, double c3, double c2, double c1, double c0)
-{
-    for (int it = 0; it < 10; ++it) {
-        double fx  = poly5_real(x, c4, c3, c2, c1, c0);
-        double dfx = poly5_real_deriv(x, c4, c3, c2, c1);
-        if (fabs(dfx) < 1e-14) break;
-        double step = fx / dfx;
-        x -= step;
-        if (fabs(step) < 1e-12) break;
-    }
-    return x;
-}
-
-/* -------- fallback scan+bisection (guaranteed, slower) -------- */
-
-static double bisect_root(double a, double b, double c4, double c3, double c2, double c1, double c0, double eps)
-{
-    double fa = poly5_real(a, c4, c3, c2, c1, c0);
-    double fb = poly5_real(b, c4, c3, c2, c1, c0);
-
-    for (int it = 0; it < 90; ++it) {
-        double m = 0.5 * (a + b);
-        double fm = poly5_real(m, c4, c3, c2, c1, c0);
-
-        if (fabs(fm) < eps) return m;
-
-        if (fa * fm <= 0.0) { b = m; fb = fm; }
-        else                { a = m; fa = fm; }
-    }
-    return 0.5 * (a + b);
-}
-
-static int solve_quintic_real_scan(double c4, double c3, double c2, double c1, double c0,
-                                   double *out_real, double eps)
-{
-    double maxc = fabs(c4);
-    if (fabs(c3) > maxc) maxc = fabs(c3);
-    if (fabs(c2) > maxc) maxc = fabs(c2);
-    if (fabs(c1) > maxc) maxc = fabs(c1);
-    if (fabs(c0) > maxc) maxc = fabs(c0);
-
-    double R = 1.0 + maxc;
-    if (R < 1.0) R = 1.0;
-
-    const int N = 4096;              // still only used when DK fails
-    const double near0 = 1e-5;
-
-    int nr = 0;
-    double x0 = -R;
-    double f0 = poly5_real(x0, c4, c3, c2, c1, c0);
-
-    for (int i = 1; i <= N; ++i) {
-        double x1 = -R + (2.0 * R) * ((double)i / (double)N);
-        double f1 = poly5_real(x1, c4, c3, c2, c1, c0);
-
-        if (fabs(f0) < near0 && nr < 5) out_real[nr++] = x0;
-
-        if ((f0 * f1) < 0.0 && nr < 5) {
-            double r = bisect_root(x0, x1, c4, c3, c2, c1, c0, eps);
-            r = newton_refine(r, c4, c3, c2, c1, c0);
-            out_real[nr++] = r;
-        } else if (fabs(f1) < near0 && nr < 5) {
-            double r = newton_refine(x1, c4, c3, c2, c1, c0);
-            out_real[nr++] = r;
-        }
-
-        x0 = x1;
-        f0 = f1;
-    }
-
-    if (nr == 0) return 0;
-
-    sort_doubles(out_real, nr);
-    nr = uniq_merge(out_real, nr, 1e-7);
-    if (nr > 5) nr = 5;
-    return nr;
-}
-
-/* -------- Durand–Kerner (complex), then extract real roots -------- */
-
-static int solve_quintic_real_DK(double c4, double c3, double c2, double c1, double c0,
-                                 double *out_real, double eps)
-{
-    const int n = 5;
-    double complex z[5];
-
-    double maxc = fabs(c4);
-    if (fabs(c3) > maxc) maxc = fabs(c3);
-    if (fabs(c2) > maxc) maxc = fabs(c2);
-    if (fabs(c1) > maxc) maxc = fabs(c1);
-    if (fabs(c0) > maxc) maxc = fabs(c0);
-
-    double R = 1.0 + maxc;
-    if (R < 1.0) R = 1.0;
-
-    for (int k = 0; k < n; ++k) {
-        double theta = 2.0 * M_PI * (double)k / (double)n;
-        double jitter = 1.0 + 0.03 * (double)(k + 1);
-        z[k] = (R * jitter) * (cos(theta) + I * sin(theta));
-    }
-
-    const int max_iter = 120;
-    const double tol_step = 1e-12;
-
-    for (int it = 0; it < max_iter; ++it) {
-        double max_step = 0.0;
-
-        for (int k = 0; k < n; ++k) {
-            double complex denom = 1.0 + 0.0*I;
-            for (int j = 0; j < n; ++j) {
-                if (j == k) continue;
-                denom *= (z[k] - z[j]);
-            }
-
-            if (cabs(denom) < 1e-18) {
-                z[k] += (1e-6 + 1e-6*I);
-                continue;
-            }
-
-            double complex p = poly5_c_monic(z[k], c4, c3, c2, c1, c0);
-            double complex step = p / denom;
-            z[k] -= step;
-
-            double sm = cabs(step);
-            if (sm > max_step) max_step = sm;
-        }
-
-        if (max_step < tol_step) break;
-    }
-
-    double reals[5];
-    int nr = 0;
-
-    // extraction criteria
-    const double imag_tol_base = 1e-6;
-    const double prescale = 1e-8;
-
-    for (int k = 0; k < n; ++k) {
-        double rr = creal(z[k]);
-        double im = cimag(z[k]);
-
-        double complex pz = poly5_c_monic(z[k], c4, c3, c2, c1, c0);
-        double abs_pz = cabs(pz);
-
-        double scale = pow(1.0 + cabs(z[k]), 5.0);
-        double p_tol = prescale * scale;
-
-        double imag_tol = imag_tol_base * (1.0 + fabs(rr));
-
-        if (fabs(im) < imag_tol && abs_pz < p_tol) {
-            double r = newton_refine(rr, c4, c3, c2, c1, c0);
-            if (fabs(poly5_real(r, c4, c3, c2, c1, c0)) < (eps * 100.0)) {
-                reals[nr++] = r;
-            }
-        }
-    }
-
-    if (nr == 0) return solve_quintic_real_scan(c4, c3, c2, c1, c0, out_real, eps);
-
-    sort_doubles(reals, nr);
-    nr = uniq_merge(reals, nr, 1e-7);
-    if (nr > 5) nr = 5;
-
-    for (int i = 0; i < nr; ++i) out_real[i] = reals[i];
-    return nr;
-}
 
 /* ---------------- Max methods ---------------- */
 
@@ -311,10 +105,10 @@ static void butterfly_assist(t_butterfly *x, void *b, long m, long a, char *s)
     if (m == ASSIST_INLET) {
         switch (a) {
             case 0: snprintf(s, 256, "signal/float: a"); break;
-            case 1: snprintf(s, 256, "signal/float: b"); break;
-            case 2: snprintf(s, 256, "signal/float: c"); break;
-            case 3: snprintf(s, 256, "signal/float: d"); break;
-            case 4: snprintf(s, 256, "signal/float: width"); break;
+            case 1: snprintf(s, 256, "signal: b; stored value: b <number> message"); break;
+            case 2: snprintf(s, 256, "signal: c; stored value: c <number> message"); break;
+            case 3: snprintf(s, 256, "signal: d; stored value: d <number> message"); break;
+            case 4: snprintf(s, 256, "signal: width; stored value: width <number> message"); break;
         }
     } else {
         switch (a) {
@@ -359,8 +153,10 @@ static void butterfly_mode(t_butterfly *x, t_symbol *s)
 
 static void butterfly_info(t_butterfly *x)
 {
-    post("butterfly~: a=%g b=%g c=%g d=%g width=%g eps=%g width_eps=%g mode=%ld x_prev=%g",
-         x->a, x->b, x->c, x->d, x->width, x->eps, x->width_eps, x->mode, x->x_prev);
+    post("%s %s | solver SHA-256 %s", BF_MAX_CLASS_NAME, BF_RELEASE_VERSION, BF_SOLVER_SHA256);
+    post("%s: a=%g b=%g c=%g d=%g width=%g stability_eps=%g width_eps=%g mode=%ld x_prev=%g",
+         BF_MAX_CLASS_NAME, x->a, x->b, x->c, x->d, x->width,
+         x->eps, x->width_eps, x->mode, x->x_prev);
     post("           connected: a=%d b=%d c=%d d=%d width=%d",
          (int)x->a_connected, (int)x->b_connected, (int)x->c_connected,
          (int)x->d_connected, (int)x->w_connected);
@@ -412,15 +208,18 @@ static void butterfly_perform64(t_butterfly *x, t_object *dsp64,
     const double c_eff = c * w;
     const double d_eff = d * w;
 
-    // quintic: x^5 + 0*x^4 + a*x^3 + b_eff*x^2 + c_eff*x + d_eff
-    const double c4 = 0.0;
-    const double c3 = a;
-    const double c2 = b_eff;
-    const double c1 = c_eff;
-    const double c0 = d_eff;
+    /* Individually finite inputs can overflow when width is applied. */
+    if (!bf_isfinite(b_eff) || !bf_isfinite(c_eff) || !bf_isfinite(d_eff)) {
+        for (long i = 0; i < sampleframes; ++i) {
+            out_r0[i]=out_r1[i]=out_r2[i]=out_r3[i]=out_r4[i]=NAN;
+            out_state[i]=NAN; out_nroots[i]=NAN; out_xout[i]=NAN;
+        }
+        return;
+    }
 
+    // quintic: x^5 + a*x^3 + b_eff*x^2 + c_eff*x + d_eff
     double roots[5] = {NAN, NAN, NAN, NAN, NAN};
-    int nreal = solve_quintic_real_DK(c4, c3, c2, c1, c0, roots, eps);
+    int nreal = bfri_solve_butterfly(a, b_eff, c_eff, d_eff, roots, NULL);
 
     // choose x_out
     double xout = NAN;
@@ -518,7 +317,7 @@ static void *butterfly_new(t_symbol *s, long argc, t_atom *argv)
     outlet_new((t_object*)x, "signal"); // r1
     outlet_new((t_object*)x, "signal"); // r0 (leftmost)
 
-    // defaults (musically usable)
+    // defaults
     x->a = -3.0;
     x->b = 0.0;
     x->c = 1.0;
@@ -545,7 +344,7 @@ void ext_main(void *r)
 {
     t_class *c;
 
-    c = class_new("butterfly~",
+    c = class_new(BF_MAX_CLASS_NAME,
                   (method)butterfly_new,
                   (method)butterfly_free,
                   (long)sizeof(t_butterfly),
@@ -561,7 +360,8 @@ void ext_main(void *r)
     class_addmethod(c, (method)butterfly_set_d, "d",     A_FLOAT, 0);
     class_addmethod(c, (method)butterfly_set_w, "width", A_FLOAT, 0);
 
-    class_addmethod(c, (method)butterfly_eps,       "eps",       A_FLOAT, 0);
+    class_addmethod(c, (method)butterfly_eps,       "stability_eps", A_FLOAT, 0);
+    class_addmethod(c, (method)butterfly_eps,       "eps",       A_FLOAT, 0); /* legacy alias */
     class_addmethod(c, (method)butterfly_width_eps, "width_eps", A_FLOAT, 0);
     class_addmethod(c, (method)butterfly_mode,      "mode",      A_SYM, 0);
 
@@ -572,5 +372,5 @@ void ext_main(void *r)
     class_register(CLASS_BOX, c);
     s_butterfly_class = c;
 
-    post("butterfly~ loaded %s %s", __DATE__, __TIME__);
+    post("%s %s loaded %s %s", BF_MAX_CLASS_NAME, BF_RELEASE_VERSION, __DATE__, __TIME__);
 }
